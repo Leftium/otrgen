@@ -14,6 +14,7 @@
   },
   "devDependencies": {
     "@oclif/dev-cli": "^1",
+    "coffeescript": "^2.5.1",
     "rimraf": "^3.0.2"
   },
   "engines": {
@@ -28,7 +29,7 @@
     "oclif"
   ],
   "license": "MIT",
-  "main": "src/index.js",
+  "main": "lib/index.js",
   "oclif": {
     "bin": "otrgen"
   },
@@ -36,6 +37,8 @@
   "scripts": {
     "prepack": "oclif-dev readme",
     "test": "echo NO TESTS",
-    "version": "oclif-dev readme && git add README.md"
+    "version": "oclif-dev readme && git add README.md",
+    "dev": "coffee --watch --output lib ./src/index.coffee",
+    "exe": "./bin/run"
   }
 }
