@@ -1,0 +1,41 @@
+{
+  "name": "otrgen",
+  "description": "Generate OTR (oTranscribe) files from (YouTube) SBV/TTML files.",
+  "version": "0.0.0",
+  "author": "Leftium @Leftium",
+  "bin": {
+    "otrgen": "./bin/run"
+  },
+  "bugs": "https://github.com/Leftium/otrgen/issues",
+  "dependencies": {
+    "@oclif/command": "^1",
+    "@oclif/config": "^1",
+    "@oclif/plugin-help": "^2"
+  },
+  "devDependencies": {
+    "@oclif/dev-cli": "^1",
+    "rimraf": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=8.0.0"
+  },
+  "files": [
+    "/bin",
+    "/src"
+  ],
+  "homepage": "https://github.com/Leftium/otrgen",
+  "keywords": [
+    "oclif"
+  ],
+  "license": "MIT",
+  "main": "src/index.js",
+  "oclif": {
+    "bin": "otrgen"
+  },
+  "repository": "Leftium/otrgen",
+  "scripts": {
+    "prepack": "oclif-dev readme",
+    "test": "echo NO TESTS",
+    "version": "oclif-dev readme && git add README.md"
+  }
+}
