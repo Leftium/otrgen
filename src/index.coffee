@@ -24,6 +24,16 @@ otrTimestamp = (timestamp) ->
         <span class="timestamp" data-timestamp="#{seconds}">#{groups.m}:#{groups.s}</span>
     """
 
+
+markdownTimestamp = (timestamp) ->
+    matches = timestamp.match tsRE
+    groups = matches.groups
+
+    markdown = """
+        <t ms=#{groups.ms}>#{groups.m}:#{groups.s}</t>
+    """
+
+
 ttml2sbv = (lines) ->
     results = []
 
@@ -50,43 +60,73 @@ parseBlock = (lines) ->
 
     otrStartTs = otrTimestamp startTs
 
-    html =  "#{otrStartTs} #{text} <br />"
-
-
+    result =
+        ts: startTs
+        text: text
 
 
 class OtrgenCommand extends Command
     run: ->
-        {args} = @parse OtrgenCommand
+        {flags, args} = @parse OtrgenCommand
 
         # Show usage if no input file given.
         if args.inputFile is ''
             @_help()
             @exit 0
 
+        inputFormat = args.inputFile.split('.').pop().toLowerCase()
+
+        outputFormat = flags.format.toLowerCase()
+        if outputFormat is 'otr' and inputFormat is 'otr'
+            outputFormat = 'md'
         text = await fs.readFile args.inputFile, 'utf8'
 
-        lines = text.split /\r?\n/
+        if inputFormat in ['otr', 'html', 'htm']
+            if inputFormat is 'otr'
+                otr = JSON.parse text
+                html = otr.text
+            else
+                html = text
 
-        # Check for and convert TTML format to SBV
-        if lines[1].match /tt xml/
-            lines = ttml2sbv lines
+            switch outputFormat
+                when 'html'
+                    @log html
+                else
+                    @error "Unsupported output format #{outputFormat}."
+        else
+            lines = text.split /\r?\n/
+            # Check for and convert TTML format to SBV
+            if (inputFormat is 'ttml') or (lines[1].match /tt xml/)
+                lines = ttml2sbv lines
 
-        results = []
-        while lines.length
-            results.push parseBlock lines
+            resultsHtml = []
+            resultsMarkdown = []
+            while lines.length
+                {ts, text} = parseBlock lines
+                resultsHtml.push "#{otrTimestamp ts} #{text} <br/>"
+                resultsMarkdown.push "#{markdownTimestamp ts} #{text} <br/>"
+
+            markdown = resultsMarkdown.join '\n'
+            html = resultsHtml.join '\n'
+            otr =
+                text: html
+
+            switch outputFormat
+                when 'html'
+                    @log html
+                when 'otr'
+                    @log otr
+                when 'md'
+                    @log markdown
+                else
+                    @error "Unknown output format #{outputFormat}."
 
 
-        html = results.join '\n'
 
-        otr =
-            text: html
-
-        otrString = JSON.stringify otr, 4
-
-        @log otrString
-
-
+OtrgenCommand.description = """Generate oTranscribe OTR files from TTML/SBV.
+Converts TTML/SBV files to OTR format ready for import into oTranscribe.
+Get YouTube TTML files with `youtube-dl --write-auto-sub --sub-format ttml [YOUTUBE URL]`.
+"""
 
 OtrgenCommand.args = [
     arg =
@@ -95,16 +135,16 @@ OtrgenCommand.args = [
         default: ''
 ]
 
-OtrgenCommand.description = """Generate oTranscribe OTR files from TTML/SBV.
-Converts TTML/SBV files to OTR format ready for import into oTranscribe.
-Get YouTube TTML files with `youtube-dl --write-auto-sub --sub-format ttml [YOUTUBE URL]`.
-"""
-
 OtrgenCommand.flags =
     # add --version flag to show CLI version
     version: flags.version {char: 'v'}
     # add --help flag to show CLI version
     help: flags.help {char: 'h'}
+    format: flags.string options =
+        char: 'f'
+        description: 'Output format. (Defaults MD if input file is already OTR.)'
+        default: 'otr'
+
 
 
 module.exports = OtrgenCommand
