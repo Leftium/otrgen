@@ -1,9 +1,11 @@
 {Command, flags} = require '@oclif/command'
+TurndownService = require('turndown')
 
 fs = require('fs').promises
 
 tsRE = /(?<h>\d):(?<m>\d\d):(?<s>\d\d)\.(?<ms>\d\d\d)/
 ttmlRE = /^<p begin="(?<ts1>[\d:.]*)" end="(?<ts2>[\d:.]*)" style="s2">(?<text>.*?)<\/p>$/
+mdtsRE = /<t ms=(?<ms>\d+)>(?<m>\d\d):(?<s>\d\d)<\/t>/
 
 decodeEntities = (encodedString) ->
     encodedString.replace /&#(\d+);/gi, (match, numStr) ->
@@ -65,6 +67,74 @@ parseBlock = (lines) ->
         text: text
 
 
+html2Markdown = (html) ->
+    turndownService = new TurndownService()
+
+    turndownService.escape = (text) -> text
+
+    turndownService.addRule 'p', options =
+        filter: 'p'
+        replacement: (content, node, options) ->
+            # Replace non-breaking spaces with space
+            content = content.replace /\u00a0/g, ' '
+            "\n#{content}"
+
+    turndownService.addRule 'timestamp', options =
+        filter: 'span'
+        replacement: (content, node, options) ->
+            if node.className is 'timestamp'
+                timestamp = node.dataset.timestamp
+                ms = timestamp.split('.').pop()
+                return "<t ms=#{ms}>#{content}</t>"
+            else
+                return content
+
+    markdown = turndownService.turndown(html)
+
+    lines = markdown.split '\n'
+    results = []
+
+    # We want blank lines between notes and timestamps, but
+    # keep consecutive timestamps to be tightly packed.
+    for line in lines
+        if line.match /^<t ms=/
+            line = "\n#{line}<br>"
+        else
+            line = line.replace /\u00a0/g, ' '
+        results.push line
+
+    markdown = results.join '\n'
+    # Remove extra newlines between consecutive timestamps.
+    markdown = markdown.replace /<br>\n\n/g, '<br>\n'
+
+markdown2Html = (markdown) ->
+    lines = markdown.split '\n'
+
+    results = []
+    for line in lines
+        if matches = line.match mdtsRE
+            groups = matches.groups
+
+            # Convert timestamp to seconds
+            m  = parseInt groups.m,  10
+            s  = parseInt groups.s,  10
+            ms = parseInt groups.ms, 10
+            seconds = m*60 + s + ms/1000
+
+
+            line = line.replace mdtsRE, """
+                <span class="timestamp" data-timestamp="#{seconds}">#{groups.m}:#{groups.s}</span>
+            """
+        else
+            # Ensure spacing preserved with non-breaking spaces.
+            line = line.replace /[ ]/g, '\u00a0'
+            line = "#{line}<br/>"
+        results.push line
+
+
+    html = results.join '\n'
+
+
 class OtrgenCommand extends Command
     run: ->
         {flags, args} = @parse OtrgenCommand
@@ -81,45 +151,61 @@ class OtrgenCommand extends Command
             outputFormat = 'md'
         text = await fs.readFile args.inputFile, 'utf8'
 
-        if inputFormat in ['otr', 'html', 'htm']
-            if inputFormat is 'otr'
-                otr = JSON.parse text
-                html = otr.text
+        switch inputFormat
+            when 'otr', 'html', 'htm'
+                if inputFormat is 'otr'
+                    otr = JSON.parse text
+                    html = otr.text
+                else
+                    html = text
+
+                switch outputFormat
+                    when 'html'
+                        @log html
+                    when 'md'
+                        @log html2Markdown html
+                    else
+                        @error "Unsupported output format #{outputFormat}."
+            when 'md'
+                html = markdown2Html text
+                otr =
+                    text: html
+
+                switch outputFormat
+                    when 'html'
+                        @log html
+                    when 'otr'
+                        @log JSON.stringify(otr, 3)
+                    else
+                        @error "Unsupported output format #{outputFormat}."
+
+            when 'ttml', 'sbv'
+                lines = text.split /\r?\n/
+                # Check for and convert TTML format to SBV
+                if (inputFormat is 'ttml') or (lines[1].match /tt xml/)
+                    lines = ttml2sbv lines
+
+                resultsHtml = []
+                while lines.length
+                    {ts, text} = parseBlock lines
+                    resultsHtml.push "#{otrTimestamp ts} #{text} <br/>"
+
+
+                html = resultsHtml.join '\n'
+                otr =
+                    text: html
+
+                switch outputFormat
+                    when 'html'
+                        @log html
+                    when 'otr'
+                        @log JSON.stringify(otr, 3)
+                    when 'md'
+                        @log html2Markdown html
+                    else
+                        @error "Unsupported output format #{outputFormat}."
             else
-                html = text
-
-            switch outputFormat
-                when 'html'
-                    @log html
-                else
-                    @error "Unsupported output format #{outputFormat}."
-        else
-            lines = text.split /\r?\n/
-            # Check for and convert TTML format to SBV
-            if (inputFormat is 'ttml') or (lines[1].match /tt xml/)
-                lines = ttml2sbv lines
-
-            resultsHtml = []
-            resultsMarkdown = []
-            while lines.length
-                {ts, text} = parseBlock lines
-                resultsHtml.push "#{otrTimestamp ts} #{text} <br/>"
-                resultsMarkdown.push "#{markdownTimestamp ts} #{text} <br/>"
-
-            markdown = resultsMarkdown.join '\n'
-            html = resultsHtml.join '\n'
-            otr =
-                text: html
-
-            switch outputFormat
-                when 'html'
-                    @log html
-                when 'otr'
-                    @log otr
-                when 'md'
-                    @log markdown
-                else
-                    @error "Unknown output format #{outputFormat}."
+                @error "Unsupported input format #{inputFormat}."
 
 
 
