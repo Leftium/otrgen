@@ -36,19 +36,40 @@ markdownTimestamp = (timestamp) ->
     """
 
 
+
 ttml2sbv = (lines) ->
     results = []
 
-    for line in lines
-        matches = line.match ttmlRE
+    numLines = lines.length
+    i = 0
 
-        if matches
-            groups = matches.groups
-            results.push "#{groups.ts1}, #{groups.ts2}"
-            results.push "#{decodeEntities groups.text}"
+    while i < numLines
+        matches1 = null
+        matches2 = null
+
+        # Get first line of caption text.
+        while not matches1 and i < numLines
+            matches1 = lines[i++].match ttmlRE
+
+        if matches1
+            # Get second line of caption text.
+            while not matches2 and i < numLines
+                matches2 = lines[i++].match ttmlRE
+
+            groups1 = matches1?.groups
+            groups2 = matches2?.groups
+
+            text1 = decodeEntities groups1.text
+            text2 = decodeEntities(groups2?.text or '') # groups2 might be null.
+
+            text = "#{text1} #{text2}".trim()
+
+            results.push "#{groups1.ts1}, #{groups1.ts2}"
+            results.push "#{decodeEntities text}"
             results.push ""
 
     results
+
 
 parseBlock = (lines) ->
     timestamps = lines.shift()
@@ -187,8 +208,9 @@ class OtrgenCommand extends Command
 
                 resultsHtml = []
                 while lines.length
-                    {ts, text} = parseBlock lines
-                    resultsHtml.push "#{otrTimestamp ts} #{text} <br/>"
+                    if result = parseBlock lines
+                        {ts, text} = result
+                        resultsHtml.push "#{otrTimestamp ts} #{text} <br/>"
 
 
                 html = resultsHtml.join '\n'
